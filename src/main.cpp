@@ -91,12 +91,10 @@ ISR(INT0_vect){
       hold_tap = 0b00000000;
     }
     
-  
     
     if (hold_tap == 0b00101000) {
       ADCSRA |= (1 << ADSC); // Запуск АЦП
-      hold_tap = 0;
-      config = 0;
+
     }
     if(hold_tap & 0b10000000) hold_tap &= 0b01111111;
     
@@ -180,17 +178,49 @@ ISR(TIM0_OVF_vect){
 ISR(TIM0_COMPA_vect){
   PORTB &= ~(1 << PB3) & ~(1 << PB2) & ~(1 << PB4);
   if (config > 175) PORTB &= ~(1 << PB0); // Выключение светодиода для второго и третьего режима
-} 
- 
-ISR(ADC_vect){ // Зажигаем светодиоды в зависимости от напряжения 
-  if(ADC < 875) PORTB |= (1 << PB3); 
-  else if((ADC > 875) && (ADC < 931)) PORTB |= (1 << PB3) | (1 << PB2);
-  else PORTB |= (1 << PB3) | (1 << PB2) | (1 << PB4); 
 }
 
-ISR(WDT_vect){
-  PORTB |= (1 << PB0);
+ISR(TIM0_COMPB_vect){ // Мигаем пару раз при ником уровне заряда батареи 
+  if (OCR0A < 3){
+  OCR0A ++;
+  PORTB &= (~PINB3 << PB3);
+  PORTB |= (~PINB3 << PB3);
+  TCCR0B |= (1 << CS02) | (1 << CS00); //Запуск таймера с делителм на N = 1024
+  }
+  else {
+    GIMSK |= (1 << INT0); // Разрешаю прерывания по INT0
+    TIMSK0 = ~TIMSK0; // // Включил прерывания по совпадению с OCR0A и по переполнению счётчика
+  }
+  
 }
+
+
+ 
+ISR(ADC_vect){ // Зажигаем светодиоды в зависимости от напряжения 
+  if (hold_tap == 0b00101000) {
+    if(ADC < 875) PORTB |= (1 << PB3); 
+    else if((ADC > 875) && (ADC < 931)) PORTB |= (1 << PB3) | (1 << PB2);
+    else PORTB |= (1 << PB3) | (1 << PB2) | (1 << PB4); 
+    hold_tap = 0;
+    config = 0;
+    }
+  else{
+    if(ADC < 875){
+      PORTB |= (1 << PB3);
+      OCR0B = 206; // период миганий
+      OCR0A = 0; 
+      TIMSK0 = ~TIMSK0; // Отключение прерываний по переполнению таймера и совпадением с OCR0A, включение прерывание по совпадению с OCR0B
+      GIMSK |= (0 << INT0); // Запрещаю прерывания по INT0
+      TCCR0B |= (1 << CS02) | (1 << CS00); //Запуск таймера с делителм на N = 1024
+
+
+    }
+  }
+  
+ 
+}
+
+
 
 void interrrupt_ini(){
   DDRB &= ~(1 << PB1); // Настраиваю пин на вход
@@ -201,7 +231,7 @@ void interrrupt_ini(){
 
 void timer_ini(){
 // TCCR0A |= (0 << WGM01) | (0 << WGM00); // Режим сравнения с регистром OCR0A
-  TIMSK0 |= (1 << OCIE0A) | (1 << TOIE0); // Включил прерывания по совпадению с OCR0A и OCR0B и по переполнению счётчика
+  TIMSK0 |= (1 << OCIE0A) | (1 << TOIE0); // Включил прерывания по совпадению с OCR0A и по переполнению счётчика
 }
 
 void adc_ini(){
